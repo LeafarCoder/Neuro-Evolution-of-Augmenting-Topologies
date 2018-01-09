@@ -23,7 +23,7 @@ import javax.swing.UnsupportedLookAndFeelException;
 /*
 
 Notes about project:
-
+	:)
 	Mutation:
 	- Allow "Add connection" from one node to same node ? 
 	
