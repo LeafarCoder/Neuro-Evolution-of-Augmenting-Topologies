@@ -1,0 +1,8 @@
+get number of Layers:
+	- now returns the real number of layers (including inputs and outputs)
+	- input layer is layer 0
+	- output layer is layer (numLayers - 1)
+
+number of inputs (include bias? not to user knowledge?)
+
+check feedback (in addConection method) condition
