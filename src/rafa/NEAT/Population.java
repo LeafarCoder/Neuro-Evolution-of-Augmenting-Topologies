@@ -1,407 +1,497 @@
 package rafa.NEAT;
 
 import java.util.*;
+
+import javax.swing.ImageIcon;
+import javax.swing.JOptionPane;
+
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.lang.reflect.InvocationTargetException;
 import java.text.ParseException;
+import java.awt.Color;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import org.json.simple.*;
 import org.json.simple.parser.*;
 
+import rafa.GUI.NEATWindow;
+import rafa.Main.Simulations.Simulation;
+import rafa.Main.Simulations.Created.TicTacToe.TicTacToe_Sim;
 
-public class Population {
 
-	private int generation;
-	private Species species = new Species();
-	private List<Network> population = new ArrayList<Network>();
-	
-	private int mutateNodeAddProbability;
-	private int mutateGeneAddProbability;
-	private int mutateWeightProbability;
-	
-	
+public class Population implements Serializable{
+
+	private int generation = 1;
+	private Species species;
+	private Hashtable<Integer, Network> population;
+
+	private int numInputNodes = 0;
+	private int numOutputNodes = 0;
+
+	private int lastNetID = 0;
+
+	// ************************************* PARAMETERS ****************************************
+
+	// All
+	ArrayList<Parameters> popParameters;
+
+	// General
+	static int popInitialSize;
+
+	// Mutation
+	static double mutateNodeAddProbability = 0.03;
+	static double mutateGeneAddProbability = 0.05;
+	static double mutateWeightProbability = 0.8;
+	static double mutationWeightPower;
+	static double uniformWeightMutationProb;
+
+	// Crossover
+	static double crossoverToggleInheritedGeneStateProb;
+
+	// Speciation
+	static double speciationSpeciesSize;
+	static double speciationSurvivalThreshold;
+	static double speciationDisjointCoefficient = 2;
+	static double speciationExcessCoefficient = 2;
+	static double speciationWeightDifferenceCoefficient = 1;
+	static double speciationCompatibilityThreshold;
+	static double speciationCompatibilityModifier;
+
+	// ********************************** PARAMETERS (end) *************************************
+
+
 	// create an empty population
 	public Population(){
-	
-		generation = 1;
-		
-	}
-	
-	
-	// create population with N networks from scratch
-	public Population(int n, int numberOfInputs, int numberOfOutputs, float time){
-		
-		generation = 1;
-		
-		// add N new random networks
-		population = new ArrayList<Network>();
-		for(int i = 0; i < n; i++){
-			addNetwork(new Network(i, numberOfInputs, numberOfOutputs));
-		}
-		
-		/*
-		for(int i = 0; i < getPopSize(); i++){
-			System.out.println("Network "+i+": "+getNetworkByID(i).getSpecie());
-		}
-		
-		for(int i = 0; i < species.getNumOfSpecies(); i++){
-			System.out.println("Species "+i+": "+species.getSpecieSize(i));
-		}
-		*/
+		population = new Hashtable<Integer, Network>();
+		species = new Species(this);
 	}
 
-	
+	// create population with N networks from scratch without Parameters
+	public Population(int initialSize, int numberOfInputs, int numberOfOutputs){
+		population = new Hashtable<Integer, Network>();
+		species = new Species(this);
+
+		// add N new random networks
+		for(int i = 0; i < initialSize; i++){
+			addNetwork(new Network(lastNetID++, numberOfInputs, numberOfOutputs));
+		}
+
+	}
+
+	// create population with N networks from scratch
+	public Population(int initialSize, int numberOfInputs, int numberOfOutputs, ArrayList<Parameters> popParam){
+		population = new Hashtable<Integer, Network>();
+		setParameters(popParam);
+		species = new Species(this);
+
+		// add N new random networks
+		for(int i = 0; i < initialSize; i++){
+			addNetwork(new Network(lastNetID++, numberOfInputs, numberOfOutputs));
+		}
+
+	}
+
 	public Network getNetworkByID(int ID){
+		if(!population.containsKey(ID)){
+			System.err.println("rafa::Population::getNetworkByID: No Network with ID " + ID + " exists in the population!");
+			return null;
+		}
 		return population.get(ID);
 	}
-	
+
+	public Enumeration<Integer> getNetworkIDs(){
+		return population.keys();
+	}
+
+	private Network[] getNetworks(){
+		Network[] networks = new Network[population.size()];
+
+		Enumeration<Network> enumeration = population.elements();
+		for(int i = 0; i < networks.length; i++){
+			networks[i] = enumeration.nextElement();
+		}
+
+		return networks;
+	}
+
 	public int getPopSize(){
 		return population.size();
 	}
-	
+
+	public int getLastNetID(){
+		return lastNetID;
+	}
+
 	public int getGeneration(){
 		return generation;
 	}
 
-	public float getMaxFitness(){
-		
-		float maxFitness = 0;
-		for(int i = 0; i < getPopSize(); i++){
-			maxFitness = Math.max(maxFitness, getNetworkByID(i).getNetFitness());
+	public double getMaxFitness(){
+		double maxFitness = 0;
+
+		Enumeration<Integer> k = population.keys();
+		while(k.hasMoreElements()){
+			Integer id = k.nextElement();
+			maxFitness = Math.max(maxFitness, getNetworkByID(id).getNetFitness());
 		}
-		
+
 		return maxFitness;
 	}
-	
-	public int getNumberOfInputs(){
-		if(getPopSize() == 0){
-			return 0;
-		}else{
-			return getNetworkByID(0).getNumberOfInputNodes() - 1; // not counting the bias
-		}
-	}
-	
-	public int getNumberOfOutputs(){
-		if(getPopSize() == 0){
-			return 0;
-		}else{
-			return getNetworkByID(0).getNumberOfOutputNodes();
-		}
-	}
-	
+
 	public int getNumberOfSpecies(){
-		if(getPopSize() == 0){
-			return 0;
+		return species.getNumOfSpecies();
+	}
+
+	public Species getSpecies(){
+		return species;
+	}
+
+	public int getNumberOfInputNodes(){
+		return numInputNodes;
+	}
+
+	public int getNumberOfOutputNodes(){
+		return numOutputNodes;
+	}
+
+	public void setParameters(ArrayList<Parameters> popParam){
+		popParameters = popParam;
+
+		for(int i = 0; i < popParameters.size(); i++){
+
+			switch (popParameters.get(i).getName()) {
+
+			// ********************** general **********************
+			case "popInitialSize":
+				Population.popInitialSize = (int) popParameters.get(i).getValue();
+				break;
+
+				// ********************** mutate **********************
+			case "mutateNodeAddProbability":
+				Population.mutateNodeAddProbability = popParameters.get(i).getValue();
+				break;
+
+			case "mutateGeneAddProbability":
+				Population.mutateGeneAddProbability = popParameters.get(i).getValue();
+				break;
+
+			case "mutateWeightProbability":
+				Population.mutateWeightProbability = popParameters.get(i).getValue();
+				break;
+
+			case "mutationWeightPower":
+				Population.mutationWeightPower = popParameters.get(i).getValue();
+				break;
+
+			case "uniformWeightMutationProb":
+				Population.uniformWeightMutationProb = popParameters.get(i).getValue();
+				break;
+
+				// ********************** crossover **********************
+			case "crossoverToggleInheritedGeneStateProb":
+				Population.crossoverToggleInheritedGeneStateProb = popParameters.get(i).getValue();
+				break;
+
+				// ********************** speciation **********************
+			case "speciationSpeciesSize":
+				Population.speciationSpeciesSize = popParameters.get(i).getValue();
+				break;
+
+			case "speciationSurvivalThreshold":
+				Population.speciationSurvivalThreshold = popParameters.get(i).getValue();
+				break;
+
+			case "speciationDisjointCoefficient":
+				Population.speciationDisjointCoefficient = popParameters.get(i).getValue();
+				break;
+
+			case "speciationExcessCoefficient":
+				Population.speciationExcessCoefficient = popParameters.get(i).getValue();
+				break;
+
+			case "speciationWeightDifferenceCoefficient":
+				Population.speciationWeightDifferenceCoefficient = popParameters.get(i).getValue();
+				break;
+
+			case "speciationCompatibilityThreshold":
+				Population.speciationCompatibilityThreshold = popParameters.get(i).getValue();
+				break;
+
+			case "speciationCompatibilityModifier":
+				Population.speciationCompatibilityModifier = popParameters.get(i).getValue();
+				break;
+			}
+
+		}
+
+	}
+
+	public void addNetwork(Network net){
+
+		// separate networks by species
+		if(net.hasSpecie()){
+			species.addToSpecie(net.getSpecie(), net);
 		}else{
-			return species.getNumOfSpecies();
-		}
-	}
-	
-	public void setSpeciationParameters(float coefDisjoint, float coefExcess, float coefWeights, float threshold){
-		species.setSpeciationParameters(coefDisjoint, coefExcess, coefWeights, threshold);
-	}
-	
-	public void setMutationProbabilities(int mutateNodeAddProbability, int mutateGeneAddProbability, int mutateWeightProbability){
-		this.mutateNodeAddProbability = mutateNodeAddProbability;
-		this.mutateGeneAddProbability = mutateGeneAddProbability;
-		this.mutateWeightProbability = mutateWeightProbability;
-	}
-	
-    public void addNetwork(Network net){
-    	net.setNetID(getPopSize());
-    	
-    	// separate networks by species
-		
-    	// if this is the first network added to the population initialize species
-    	if(getPopSize() == 0){
-    		species = new Species();
-    		species.addSpecie(net);
-    		net.setSpecie(0);
-    	}else{
-	
-	    	// for every species currently existing
-	    	for(int j = 0; j < species.getNumOfSpecies(); j++){
-	    					
-	    		// if the topologies are close enough then the net belongs to this species
-	    		if(Species.sameSpecies(net, species.getSpecieRepresentative(j))){
-	    			species.incrementSpecieSize(j);
-	    			net.setSpecie(j);
-	    			break;
-	    		}
-	    	}	
-    	}
-    	
-    	// if after searching over all species we couldn't find a match then add a new species
-    	if(!net.hasSpecie()){
-    		species.addSpecie(net);
-    		net.setSpecie(species.getNumOfSpecies() - 1);
-    	}
-    		
-    	// add this network to population
-    	population.add(net);
-    }
-
-    
-    public void mutatePopulation(){
-    	for (int i = 0; i < getPopSize(); i++) {
-			getNetworkByID(i).mutate(mutateGeneAddProbability, mutateNodeAddProbability, mutateWeightProbability);
-		}
-    }
-    
-    public void savePopulationToFile(String pathName){
-    	JSONObject pop = new JSONObject();
-    	
-    	JSONArray networks = new JSONArray();
-    	
-    	// add every network in population
-    	Network netw = null;
-    	for(int i = 0; i < getPopSize(); i++){
-    		
-    		netw = getNetworkByID(i);
-			
-    		
-    		
-    		// for every network, add its information: nodes, genes
-    		
-    		JSONObject net = new JSONObject();
-    		JSONObject numLayers = new JSONObject();
-    		
-    		JSONArray nodes = new JSONArray();
-    		JSONArray genes = new JSONArray();
-    		
-    		
-    		JSONObject node = new JSONObject();
-    		JSONObject gene = new JSONObject();
-
-    		
-    		// for every node
-    		for(int j = 0; j < netw.getNodeCount(); j++){
-    			node = new JSONObject();
-    			
-				node.put("ID",j);
-				node.put("Layer", netw.getNodeByID(j).getLayer());
-				node.put("Type", netw.getNodeByID(j).getNodeType());
-				
-				System.out.println(" *** ADDING A NEW NODE *** ");
-				System.out.println(j+" <-> "+node.get("ID"));
-				
-				nodes.add(node);
+			// if this is the first network added to the population initialize species
+			if(getPopSize() == 0){
+				species.addSpecie(net);
+			}else{
+				// for every species currently existing
+				Enumeration<Integer> k = species.getSpeciesIDs();
+				while (k.hasMoreElements()){
+					// if the topologies are close enough then the net belongs to this species
+					Integer specie_id =  k.nextElement();
+					if(Species.sameSpecies(net, species.getSpecieRepresentative(specie_id))){
+						species.addToSpecie(specie_id, net);
+						break;
+					}
+				}	
 			}
-    		
-    		// for every gene
-    		for(int j = 0; j < netw.getGeneCount(); j++){
-    			gene = new JSONObject();
-    			
-				gene.put("Innovation", netw.getGeneByID(j).getInnovation());
-				gene.put("Input Node", netw.getGeneByID(j).getInID());
-				gene.put("Output Node", netw.getGeneByID(j).getOutID());
-				gene.put("Weight", netw.getGeneByID(j).getWeight());
-				gene.put("State", netw.getGeneByID(j).getGeneState());
-				
-				genes.add(gene);
+
+			// if after searching over all species we couldn't find a match then add a new species
+			if(!net.hasSpecie()){
+				species.addSpecie(net);
+				net.setSpecieID(species.getNumOfSpecies() - 1);
 			}
-    		
-    		// for every Layer (save the number of nodes in that layer)
-    		for(int j = 0; j < netw.getNumLayers(); j++){
-    			numLayers.put(Integer.toString(j), netw.getNumNodesInLayer(j));
-    		}
-
-    		// save network properties
-    		net.put("ID", i);
-    		net.put("Number of inputs", netw.getNumberOfInputNodes());
-    		net.put("Number of outputs", netw.getNumberOfOutputNodes());
-    		net.put("Species", netw.getSpecie());
-    		// net.put("Fitness", netw.getNetFitness());
-    		net.put("Number of layers", netw.getNumLayers());
-    		//net.put("Node number per layer", );
-    		net.put("Genes",genes);
-    		net.put("Nodes",nodes);
-    		net.put("Number of nodes per layer", numLayers);
-    		
-    		
-    		networks.add(net);
-		}
-    	
-    	// add all the networks to population
-    	pop.put("Networks", networks);
-    	
-    	JSONArray geneHistory = new JSONArray();
-    	JSONObject geneInHistory = new JSONObject();
-    	
-    	// for every gene in Gene History
-		for(int i = 0; i < Network.getGeneHistorySize(); i++){
-			geneInHistory = new JSONObject();
-			
-			Gene gene = Network.getGeneInHistoryByID(i);
-			
-			geneInHistory.put("Innovation", gene.getInnovation());
-			geneInHistory.put("Input Node", gene.getInID());
-			geneInHistory.put("Output Node", gene.getOutID());
-			
-			geneHistory.add(geneInHistory);
-
 		}
 
-    	pop.put("Gene History", geneHistory);
-    	
-    	pop.put("Innovation number", Network.getInnovationNumber());
-    	
-    	try (FileWriter file = new FileWriter(pathName)) {
+		// if first network then set #input and #output nodes
+		if(getPopSize() == 0){
+			numInputNodes = net.getNumberOfInputNodes();
+			numOutputNodes = net.getNumberOfOutputNodes();
+		}
+		// add this network to population
+		population.put(net.getNetID(),net);
+	}
 
-            file.write(pop.toJSONString());
-            file.flush();
+	public void removeNetwork(Network net){
+		population.remove(net.getNetID());
+	}
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+	public void mutatePopulation(){
+		Enumeration<Integer> netIDs = getNetworkIDs();
 
-        System.out.print(pop.toJSONString());
-    }
+		while(netIDs.hasMoreElements()){
+			int netID = netIDs.nextElement();
+			getNetworkByID(netID).mutate(mutateGeneAddProbability, mutateNodeAddProbability, mutateWeightProbability);
+		}
+	}
+
+	public void chooseBest(){
+
+
+	}
+
+	public void savePopulationToFile(String pathName){
+
+		FileOutputStream fos;
+		try {
+			File file = new File(pathName);
+			fos = new FileOutputStream(file);
+			ObjectOutputStream oos;
+			oos = new ObjectOutputStream(fos);
+			oos.writeObject(this);
+			oos.close();
+		} catch (FileNotFoundException er) {
+			er.printStackTrace();
+		} catch (IOException er) {
+			er.printStackTrace();
+		}
+
+	}
 
 	public static Population loadPopulationFromFile(String filePath){
-	
-		Population pop = new Population();
 
-		// load components of population here
-		JSONParser parser = new JSONParser();
-		
-		try{
-			Object obj = parser.parse(new FileReader(filePath));
-			
-			JSONObject jsonObject = (JSONObject)obj;
-			
-			JSONArray networks = (JSONArray)jsonObject.get("Networks");
-			Iterator<JSONObject> iterator = networks.iterator();
-			
-			// network properties
-			JSONObject net;
-			int netID;
-			int netInNum;
-			int netOutNum;
-			int netSpeciesNum;
-			int numOfLayers;
-			JSONArray genes;
-			JSONArray nodes;
-			JSONObject numLayers;
-			
-			// for each network
-			while(iterator.hasNext()){
-				
-				System.out.println(" *** LOAD Another network *** ");
-
-				net = iterator.next();
-				
-				netID = (int)(long)net.get("ID");
-				netInNum = (int)(long)net.get("Number of inputs");
-				netOutNum = (int)(long)net.get("Number of outputs");
-				netSpeciesNum = (int)(long)net.get("Species");
-				numOfLayers = (int)(long)net.get("Number of layers");
-				numLayers = (JSONObject)net.get("Number of nodes per layer");
-				
-				genes = (JSONArray)net.get("Genes");
-				nodes = (JSONArray)net.get("Nodes");
-				
-				
-				Iterator<JSONObject> itNodes = nodes.iterator();
-				Iterator<JSONObject> itGenes = genes.iterator();
-
-				List<Node> nodesList = new ArrayList<Node>();
-				List<Gene> genesList = new ArrayList<Gene>();
-				
-				// gene properties
-				JSONObject gene;
-				int innovation;
-				int inNode;
-				int outNode;
-				float weight;
-				boolean state;
-				
-				// for each gene
-				while(itGenes.hasNext()){
-					
-					gene = itGenes.next();
-					
-					innovation = (int)(long)gene.get("Innovation");
-					inNode = (int)(long)gene.get("Input Node");
-					outNode = (int)(long)gene.get("Output Node");
-					weight = (float)(double)gene.get("Weight");
-					state = (boolean)gene.get("State");
-					
-					genesList.add(new Gene(innovation, inNode, outNode, weight, state));
-				}
-				
-				
-				// node properties
-				JSONObject node;
-				int nodeID;
-				int nodeLayer;
-				int nodeType;
-				
-				// for each node
-				while(itNodes.hasNext()){
-					
-					node = itNodes.next();
-					
-					nodeID = (int)(long)node.get("ID");
-					nodeLayer = (int)(long)node.get("Layer");
-					nodeType = (int)(long)node.get("Type");
-					
-					Node newNode = new Node(nodeID, nodeType, nodeLayer);
-					
-					nodesList.add(newNode);
-				}
-				
-				// for each layer (retrieve the number of nodes)
-				int[] numOfNodesPerLayer = new int[Network.MAX_NUMBER_OF_LAYERS];
-				for(int i = 0; i < numOfLayers; i++){
-					int numOfNodes = (int)(long)numLayers.get(Integer.toString(i));
-					numOfNodesPerLayer[i] = numOfNodes;
-				}
-
-				pop.addNetwork(new Network(netID, netInNum, netOutNum, netSpeciesNum, numOfLayers, nodesList, genesList, numOfNodesPerLayer));
-				
-			}
-			
-			// recover geneHistory
-			
-			JSONArray geneHistory = (JSONArray)jsonObject.get("Gene History");
-			Iterator<JSONObject> itGeneH = geneHistory.iterator();
-			
-			// gene in History properties
-			JSONObject geneH;
-			int innovation;
-			int inNode;
-			int outNode;
-			
-			// new Gene List (to replace geneHistory)
-			List<Gene> geneList = new ArrayList<Gene>();
-			
-			while(itGeneH.hasNext()){
-				
-				geneH = itGeneH.next();
-				
-				innovation = (int)(long)geneH.get("Innovation");
-				inNode = (int)(long)geneH.get("Input Node");
-				outNode = (int)(long)geneH.get("Output Node");
-				
-				geneList.add(new Gene(innovation, inNode, outNode, 0f, true));
-			}
-
-			Network.setGeneHistory(geneList);
-			
-			// get and set the Innovation Number from the file
-			int innovationNumber = (int)(long)jsonObject.get("Innovation number");
-			Network.setInnovationNumber(innovationNumber);
-			
-		} catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (org.json.simple.parser.ParseException e) {
-			e.printStackTrace();
+		Population pop = null;
+		try {
+			FileInputStream fileIn = new FileInputStream(filePath);
+			ObjectInputStream in = new ObjectInputStream(fileIn);
+			pop = (Population) in.readObject();
+			in.close();
+			fileIn.close();
+		} catch (IOException i) {
+			i.printStackTrace();
+		} catch (ClassNotFoundException c) {
+			c.printStackTrace();
 		}
-		
+
 		return pop;
 	}
+
+	public void nextGeneration(Simulation sim){
+
+		int popSize = getPopSize();
+
+		// ****************************** simulate ******************************
+		System.out.println("\n\n------ SIMULATE ------");
+		for(Network net: getNetworks()){
+			// sim.simulate(net, false);	// simulate without visual graphics
+
+			// System.out.println(net.getNetID() + " --> " + net.getNetFitness());
+
+			try {
+				sim.getClass().getConstructor(Network.class, boolean.class, Population.class).newInstance(net, false, this);
+				net.setSimulationRunning(true);
+			} catch (NoSuchMethodException e) {
+				e.printStackTrace();
+			} catch (SecurityException e) {
+				e.printStackTrace();
+			} catch (InstantiationException e) {
+				e.printStackTrace();
+			} catch (IllegalAccessException e) {
+				e.printStackTrace();
+			} catch (IllegalArgumentException e) {
+				e.printStackTrace();
+			} catch (InvocationTargetException e) {
+				e.printStackTrace();
+			}
+
+			System.out.println(net.getNetID() + " --> " + net.getNetFitness());
+
+		}
+		
+		boolean some_is_running;
+		do{
+			System.out.println("waiting...");
+			
+			some_is_running = false;
+			for(Network net: getNetworks()){
+				some_is_running |= net.getSimulationRunning();
+			}
+		} while (some_is_running);
+
+		// ********************* delete the worst networks from each species **********************
+		System.out.println("------ DELETE ------");
+		species.killUnfitNetworks();
+
+		// ****************************** order remaining by Fitness ******************************
+		System.out.println("------ ORDER ------");
+		ArrayList<Network> ordered_nets = new ArrayList<Network>();
+		Enumeration<Network> en = population.elements();
+		while(en.hasMoreElements()){
+			ordered_nets.add(en.nextElement());
+		}
+
+		Collections.sort(ordered_nets, new NetworkComparatorBestFirst());
+		
+		for(int i = 0; i < ordered_nets.size(); i++){
+			System.out.println(ordered_nets.get(i).getNetID()+ " --> " + ordered_nets.get(i).getNetFitness());
+		}
+		
+		// ****************************** crossover ******************************
+		System.out.println("------ CROSSOVER ------");
+		ArrayList<Network> temp_breed = new ArrayList<Network>();
+		int fathers_size = ordered_nets.size();
+		int[] count = new int[fathers_size];
+		Random rand = new Random();
+		while(ordered_nets.size() + temp_breed.size() < popSize){
+			// make it more probable to choose a better Network
+			int indx1 = (int)Math.min(fathers_size - 1, Math.abs(rand.nextGaussian() * fathers_size /4));
+			int indx2 = (int)Math.min(fathers_size - 1, Math.abs(rand.nextGaussian() * fathers_size /4));
+			count[indx1]++;
+			count[indx2]++;
+			Network parent1 = ordered_nets.get(indx1);
+			Network parent2 = ordered_nets.get(indx2);
+			temp_breed.add(Network.crossoverNetworks(lastNetID++, parent1, parent2));
+		}
+		ordered_nets.addAll(temp_breed);
+
+		// ****************************** mutate ******************************
+		System.out.println("------ MUTATE ------");
+		// leave the best 0 untouched
+
+		for(int i = 0; i < ordered_nets.size(); i++){
+			ordered_nets.get(i).mutate(mutateGeneAddProbability, mutateNodeAddProbability, mutateWeightProbability);
+		}
+
+		// ****************************** set population to this new population ******************************
+		System.out.println("------ NEW POPULATION ------");
+		population = new Hashtable<Integer, Network>();
+		for(int i = 0; i < species.getNumOfSpecies(); i++){
+			species.removeSpecie(i);
+		}
+		species.resetSpeciesControlID();
+		for(int i = 0; i < ordered_nets.size(); i++){
+			Network temp_net = ordered_nets.get(i);
+			if(temp_net.hasSpecie())temp_net.setSpecieControlToDefault();
+			addNetwork(temp_net);
+		}
+
+		// control Speciation rate
+		species.adjustDeltaThreshold();
+
+		System.out.println("------ RE-SIMULATE ------");
+		for(Network net: getNetworks()){
+			// sim.simulate(net, false);	// simulate without visual graphics
+
+			try {
+				sim.getClass().getConstructor(Network.class, boolean.class, Population.class).newInstance(net, false, this);
+				net.setSimulationRunning(true);
+			} catch (NoSuchMethodException e) {
+				e.printStackTrace();
+			} catch (SecurityException e) {
+				e.printStackTrace();
+			} catch (InstantiationException e) {
+				e.printStackTrace();
+			} catch (IllegalAccessException e) {
+				e.printStackTrace();
+			} catch (IllegalArgumentException e) {
+				e.printStackTrace();
+			} catch (InvocationTargetException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		do{
+			System.out.println("waiting...");
+			
+			some_is_running = false;
+			for(Network net: getNetworks()){
+				some_is_running |= net.getSimulationRunning();
+			}
+		} while (some_is_running);
+		
+		NEATWindow.updatePopView();
+		System.out.println("NEAT_POP_INFO_UPDATED");
+	}
+
+
+	public class Parameters{
+		private String name;
+		private double value;
+		private String description;
+
+		public Parameters(String n, double v, String d){
+			name = n;
+			value = v;
+			description = d;
+		}
+
+		public String getName(){
+			return name;
+		}
+
+		public double getValue(){
+			return value;
+		}
+
+		public String getDescription(){
+			return description;
+		}
+	}
+
+	public class NetworkComparatorBestFirst implements Comparator<Network>{
+		// Overriding compare()method of Comparator 
+		public int compare(Network net1, Network net2) {
+			return (net1.getNetFitness() < net2.getNetFitness()) ? 1 : -1;
+		}
+	}
+
 }

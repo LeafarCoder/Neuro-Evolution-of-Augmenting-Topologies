@@ -1,5 +1,6 @@
 package rafa.Main;
 import processing.core.PApplet;
+import rafa.GUI.NEATWindow;
 import rafa.NEAT.Population;
 
 import java.awt.BorderLayout;
@@ -45,14 +46,17 @@ public class Main{
 		 */
 		
 		
-		Population population = new Population();
+		//Population population = new Population();
 
 		NEATWindow NEATwindow = new NEATWindow();
-
+		
+		// PApplet.runSketch(new String[]{"netGraph2"}, w2);
 		// NetGraph2 net2 = new NetGraph2();
 		// net2.setPopulation(population);
 		
-		// Main_PApplet mainWindow = new Main_PApplet();
+		//Main_PApplet mainWindow = new Main_PApplet();
+		
+		//PApplet.runSketch(new String[]{"netGraph"}, mainWindow);
 		
 		//PApplet.runSketch(arg, m);
 		// PApplet.runSketch(new String[]{"netGraph"}, networkGraphWindow);

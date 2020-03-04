@@ -1,85 +1,75 @@
 package rafa.NEAT;
 
-import java.util.*;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Random;
 
-public class Network {
+public class Network implements Serializable{
 
     public final static int MAX_NUMBER_OF_LAYERS = 100;
     
+    // static variable: shared over all networks
     private static int innovationNumber = 0; //initial innovation number of 0
+    private static List<Gene> geneHistory = new ArrayList<Gene>();  // keeps the gene historial
     
     private List<Gene> geneList; //list of the genome sequence for this neural network
     private List<Node> nodeList; //list of nodes for this neural network
+    private List<List<Integer>> nodesInLayer;	// list of nodes in each layer
     
-    // static variable: shared over all networks
-    private static List<Gene> geneHistory = new ArrayList<Gene>();  // keeps the gene historial
-    
-    
-    private int numberOfInputs; //Number of input perceptrons of neural network (including bias)
+    private int numberOfInputs; //Number of input perceptrons of neural network (NOT including bias)
     private int numberOfOutputs; //Number of output perceptrons
     private int netID; //ID of this neural network
  
-    private int species = -1;
-    private float timeLived; //time the neural network actually lived in the test environment
-    private float netFitness; //fitness of this neural network
+    private int speciesID = -1;	// default value (-1) => has no species
+    private double timeLived; //time the neural network actually lived in the test environment (in generations)
+    private double netFitness; //fitness of this neural network
     private int numLayers;  //number of layers in network
     private int[] nodeNumPerLayer = new int[MAX_NUMBER_OF_LAYERS];   // almost impossible to get 100 layers.. but oh well xD
 
+    private boolean simulation_running;
     // add "NET GENES HISTORIAL"
-    
-    
-    // control variables
-    boolean[] visited;
-
-    
-    // constructor to load network from JSON file
-    
-    public Network(int netID, int numberOfInputs, int numberOfOutputs, int species, int numLayers, List<Node> nodes, List<Gene> genes, int[] nodeNumPerLayer){
-        
-        this.netID = netID;
-        this.numberOfInputs = numberOfInputs;
-        this.numberOfOutputs = numberOfOutputs;
-        this.species = species;
-        this.numLayers = numLayers;
-        
-        this.geneList = genes;
-        this.nodeList = nodes;
-        
-        this.nodeNumPerLayer = nodeNumPerLayer;
-        
-    }
+   
     
     // constructor to create a network from scratch
     public Network(int netID, int numberOfInputs, int numberOfOutputs) {
         this.netID = netID; //copy ID
-        this.numberOfInputs = numberOfInputs + 1; // add bias input
+        this.numberOfInputs = numberOfInputs;
         this.numberOfOutputs = numberOfOutputs;
         
-        //netFitness = 0f; //reset net fitness
-        netFitness = new Random().nextFloat();
+        netFitness = 0f; //reset net fitness
         
         timeLived = 0f; //reset time lived
         numLayers = 2;  // input layer + output layer
-        nodeNumPerLayer[0] = numberOfInputs + 1;
+        nodeNumPerLayer[0] = numberOfInputs + 1; // (include bias)
         nodeNumPerLayer[1] = numberOfOutputs;
         
         initilizeNodes(); //initialize initial nodes
         initilizeGenes(); //initialize initial gene sequence
+        
+        setNodesInLayer();
+        setNodesForwardGenes();
     }
    
     // constructor used in crossover
-    public Network(int numberOfInputs_, int numberOfOutputs_, List<Node> copyNodes, List<Gene> copyGenes){
-
+    public Network(int netID, int numberOfInputs_, int numberOfOutputs_, List<Node> copyNodes, List<Gene> copyGenes){
+    	this.netID = netID;
+    	
         numberOfInputs = numberOfInputs_; //copy number of inputs
         numberOfOutputs = numberOfOutputs_; //copy number of outputs
  
         nodeList=copyNodes; //copy node list
         geneList=copyGenes; //copy gene list
 
-        //netFitness = 0f; //reset fitness
-        netFitness = new Random().nextFloat();
-        
+        netFitness = 0f; //reset net fitness
+
         timeLived = 0f; //reset time lived
+        
+        // set forward genes
+        setNodesForwardGenes();
         
         // update layers
         numLayers = 0;
@@ -92,46 +82,41 @@ public class Network {
         
         // search for every Gene that has an Input (or bias) as In Node
         // and let it propagate to update layers
-        
-        /*
-        for(int i = 0; i < getGeneCount(); i++){
-            Gene gene = geneList.get(i);
-            
-            System.out.println("Gene "+i+": "+gene.getInID()+" -> "+gene.getOutID() + " ("+gene.getGeneState()+")");
-        }
-        */
-        
-        for(int i = 0; i < getGeneCount(); i++){
-            Gene gene = geneList.get(i);
-            
-            if(getNodeByID(gene.getInID()).getNodeType() == Node.INPUT_NODE ||
-            getNodeByID(gene.getInID()).getNodeType() == Node.INPUT_BIAS_NODE){
-                visited = new boolean[getNodeCount()];
-                visited[gene.getInID()] = true;
-                // System.out.println("From node: "+gene.getInID());
-                forwardPropagationLayerUpdate(gene.getOutID(), 1);
+        for(int i = 0; i < numberOfInputs + 1; i++){
+            Node node = nodeList.get(i);
+            int nodeType = node.getNodeType();
+            if(nodeType == Node.INPUT_NODE || nodeType == Node.INPUT_BIAS_NODE){
+                for(Gene g : node.getForwardGenes()){
+                    forwardPropagationLayerUpdate(g.getOutID(), 1);
+                }
             }
         }
         // set all output Nodes to maximum layer value:
-        for(int i = 0; i < getNodeCount(); i++){
-            if(getNodeByID(i).getNodeType() == Node.OUTPUT_NODE){
-                nodeNumPerLayer[getNodeByID(i).getLayer()]--;
-                getNodeByID(i).setLayer(getNumLayers() - 1);
-                nodeNumPerLayer[getNodeByID(i).getLayer()]++;
-            }
+        updateOutputNodesLayers();
+        
+        // set correct IDs to genes
+        for(int i = 0; i < getGeneCount(); i++){
+        	getGeneByID(i).setID(i);
         }
+        
+        setNodesInLayer();
+        setNodesForwardGenes();
     }
     
     
-    public int getSpecie(){
-        return species;
+    public Network() {
+    	
+	}
+
+	public int getSpecie(){
+        return speciesID;
     }
     
-    public float getNetFitness() {
-        return netFitness; //reutrn fitness
+    public double getNetFitness() {
+        return netFitness; //return fitness
     }
 
-    public float getTimeLived() {
+    public double getTimeLived() {
         return timeLived; //return time lived
     }
  
@@ -152,7 +137,7 @@ public class Network {
     }
     
     public int getNumberOfInputNodes() {
-        return numberOfInputs; //return number of inputs
+        return numberOfInputs; //return number of inputs (NOT including Bias)
     }
  
     public int getNumberOfOutputNodes() {
@@ -171,7 +156,7 @@ public class Network {
         return genome;
     }
 
-    public static Gene getGeneInHistoryByID(int ID){
+    public static Gene getGeneInHistoryByInnovation(int ID){
         return geneHistory.get(ID);
     }
 
@@ -179,26 +164,39 @@ public class Network {
         return geneHistory.size();
     }
     
-    public float[] getOutputValues(){
-        float[] values = new float[numberOfOutputs]; //create an array with size of number of output nodes
+    public double[] getOutputValues(){
+        double[] values = new double[numberOfOutputs]; //create an array with size of number of output nodes
     
         for (int i = 0; i < numberOfOutputs; i++) { //run through number of outputs
-            values[i] = getNodeByID(i + numberOfInputs).getNodeValue(); //set output nodes value
+            values[i] = getNodeByID(i + numberOfInputs + 1).getNodeValue(); //set output nodes value (skips inputs and bias nodes)
         }
     
         return values; //return output nodes value array
     }
     
+    // First layer (index 0): input layer
     public int getNumNodesInLayer(int layer){
         return nodeNumPerLayer[layer];  
     }
     
+    public Gene getGeneByInnovation(int innovation){
+        return  geneHistory.get(innovation);
+    }
+    
     public Gene getGeneByID(int ID){
-        return  geneList.get(ID);
+        if(ID < getGeneCount()){
+        	return geneList.get(ID);
+        }
+        System.err.println("rafa.NEAT.Network.getGeneByID: Could not find the requested Gene!");
+        return null;
     }
     
     public Node getNodeByID(int ID){
-        return  nodeList.get(ID);
+    	if(ID < getNodeCount()){
+        	return nodeList.get(ID);
+        }
+        System.err.println("rafa.NEAT.Network.getNodeByID: Could not find the requested Node!");
+        return null;
     }
     
     public List<Gene> getGeneList(){
@@ -213,6 +211,14 @@ public class Network {
         return innovationNumber;
     }
 
+    public boolean getSimulationRunning() {
+    	return simulation_running;
+    }
+    
+    public void setSimulationRunning(boolean state){
+    	simulation_running = state;
+    }
+    
     public static void setGeneHistory(List<Gene> geneH){
         geneHistory = geneH;
     }
@@ -221,31 +227,35 @@ public class Network {
         innovationNumber = n;
     }
     
-    public void setSpecie(int specie){
-        this.species = specie;
+    public void setSpecieID(int specie){
+        this.speciesID = specie;
     }
 
     public void setNetID(int nID) {
-        netID = nID; //set ID
+    	this.netID = nID; //set ID
     }
     
-    public void setTimeLived(float timeLived_) {
-        timeLived = timeLived_; //set time lived
+    public void setTimeLived(double timeLived_) {
+        this.timeLived = timeLived_; //set time lived
     }
 
-    public void setNetFitness(float netFitness_) {
-        netFitness = netFitness_; //set fitness
+    public void setNetFitness(double netFitness_) {
+    	this.netFitness = netFitness_; //set fitness
     }
  
     public void setNumLayers(int numLayers){
         this.numLayers = numLayers;
     }
     
-    public void setInputValues(float[] inputs) {
-        // for each input value (excluding the bias)
-        for (int i = 0; i < numberOfInputs - 1; i++){
+    public void setInputValues(double[] inputs) {
+        // for each input value
+        for (int i = 0; i < numberOfInputs; i++){
             getNodeByID(i).setNodeValue(inputs[i]);
         }
+    }
+    
+    public void setSpecieControlToDefault(){
+    	speciesID = -1;
     }
     
     public void resetGeneHistory(){
@@ -253,7 +263,7 @@ public class Network {
     }
     
     public boolean hasSpecie(){
-        return species != -1;
+        return speciesID != -1;
     }
     
     public void resetNodesValues() {
@@ -261,64 +271,22 @@ public class Network {
                 getNodeByID(i).setNodeValue(0f); //change value of node to given value at index i
         }
     }
-    
-    public void addNetFitness(float netFitness_) {
-        netFitness += netFitness_; //increment by given fitness
-    }
 
-    public void addTimeLived(float time_) {
+    public void addTimeLived(double time_){
         timeLived += time_; //increment by given time lived
     }
 
-    public float[] fireNet(float[] inputs){
-        
-        // resets all node values to 0
-        resetNodesValues();
-        //set input values to the input nodes
-        setInputValues(inputs);
-    
-        //feed forward net
-        float[] tempValues = getAllNodeValues(); //create a temporary storage of previous node values (used as a phenotype)
-    
-        for (int i = 0; i < geneList.size(); i++) { //run through number of genes
-            Gene gene = geneList.get(i); //get gene at index i
-            
-            if (gene.getGeneState()) { //if gene is active
-                int inID = gene.getInID(); //get in node ID
-                int outID = gene.getOutID(); //get out node ID
-                float weight = gene.getWeight(); //get weight of the connection
+    public void mutate(double addGeneProbability, double addNodeProbability, double mutateWeightProbability) {
 
-                float inNodeValue = tempValues[inID]; //get in node's value
-                float outNodeValue = tempValues[outID]; //get out node's value
-                
-                float newOutNodeValue = outNodeValue + (inNodeValue*weight); //calculate new out node's value
-                getNodeByID(outID).setNodeValue(newOutNodeValue); //set new value to the out node
-            }
-        }
-    
-        //Activation
-        for (int i = 0; i < nodeList.size(); i++) {
-            // activation function over all nodes
-            getNodeByID(i).activation();
-        }
-    
-        return getOutputValues(); //return output
-    }
-
-    public void mutate(int addConnectionProbability, int addNodeProbability, int mutateWeightProbability) {
-        
-    	int randomNumber = new Random().nextInt(100) + 1; //random number between 0 and 100
-        if (randomNumber <= addConnectionProbability) { //random number is below chance
-            mutateAddConnection(); //add connection between 2 nodes
+        if (new Random().nextFloat() <= addGeneProbability) { //random number is below chance
+            mutateAddGene(); //add connection between 2 nodes
         }
         
-        randomNumber = new Random().nextInt(100) + 1;
-        if (randomNumber <= addNodeProbability) {//random number is below chance*2
+        if (new Random().nextFloat() <= addNodeProbability) {//random number is below chance*2
             mutateAddNode(); //add a new node between an existing connection
-        }
+        } 
         
-        randomNumber = new Random().nextInt(100) + 1;
-        if (randomNumber <= mutateWeightProbability){
+        if (new Random().nextFloat() <= mutateWeightProbability){
             mutateWeight(); //mutate weight
         }
     }
@@ -331,15 +299,17 @@ public class Network {
         }
     }
 
-    public static Network crossoverNetworks (Network parent1, Network parent2) {
+    public static Network crossoverNetworks (int newID, Network parent1, Network parent2) {
+    	// newID is the ID to be attributed to the new newtwork
+    	
         Network child = null; //child to create
     
         Hashtable<Integer, Gene[]> geneHash = new Hashtable<Integer, Gene[]>(); //hash table to be used to compared genes from the two parents
     
-        List<Gene> childGeneList = new ArrayList<Gene>(); //new gene child gene list to be created
+        List<Gene> childGeneList = new ArrayList<Gene>(); //new child gene list to be created
         List<Node> childNodeList = new ArrayList<Node>(); //new child node list to be created
     
-        List<Gene> geneList1 = parent1.geneList; //get gene list of the parent 1
+        List<Gene> geneList1 = parent1.geneList; //get gene list of parent 1
         List<Gene> geneList2 = parent2.geneList; //get gene list of parent 2
     
         int numberOfGenes1 = geneList1.size(); //get number of genes in parent 1
@@ -348,7 +318,7 @@ public class Network {
         int numberOfOutputs = parent1.getNumberOfOutputNodes(); //number of outputs (same for both parents)
     
         // Both parents have the same number of input and output nodes.
-        // Those are the first (inputNodesNumber + outputNodesNumber) nodes.
+        // Those are the first (inputNodesNumber + outputNodesNumber + 1) nodes.
         // The hidden nodes are the ones that follow.
         // The child must inherit the nodes from the parent that has more nodes! 
         if (parent1.getNodeCount() > parent2.getNodeCount()) { //if parents 1 has more nodes than parent 2
@@ -356,8 +326,7 @@ public class Network {
             for(int i = 0; i < parent1.getNodeCount(); i++){
                 childNodeList.add(new Node(parent1.getNodeByID(i)));
             }
-        }
-        else { //otherwise parent 2 has equal and more nodes than parent 1
+        }else { //otherwise parent 2 has equal and more nodes than parent 1
              //copy parent2's nodes list
             for(int i = 0; i < parent2.getNodeCount(); i++){
                 childNodeList.add(new Node(parent2.getNodeByID(i)));
@@ -398,7 +367,7 @@ public class Network {
         Gene gene = null;
         
         // Crossover happens here:
-        for (int i = 0; i < keys.length; i++){ //run through all keys
+        for (int i = 0; i < keys.length; i++){ //run through all innovation numbers
             Gene[] geneValue = (Gene[])geneHash.get(keys[i]); //get value at each index
     
             //compare value is used to compare gene activation states in each parent
@@ -427,35 +396,11 @@ public class Network {
                     compareValue = 2;
                 }
                 
-                index = -1;       
+                index = -1;	// gene exists in both parents
                 
-            }else{  // if gene doens't exist in both parents
+            }else{  // if gene only exist in one parent
                 
-                /*
-
-                // if gene only exists in parent 1 and this is the parent with most fitness
-                if(parent1.getNetFitness() > parent2.getNetFitness() && geneValue[0] != null){
-                    
-                    // if gene is active (3) else if gene is not active (4)
-                    compareValue = geneValue[0].getGeneState() ? 3 : 4; //set compared value to 3
-                        
-                    // gene comes from parent 1 (index 0)
-                    index = 0;
-                
-                // if gene only exists in parent 2 and this is the parent with most fitness
-                }else if(parent1.getNetFitness() < parent2.getNetFitness() && geneValue[1] != null) {
-                    
-                    // if gene is active (3) else if gene is not active (4)
-                    compareValue = geneValue[1].getGeneState() ? 3 : 4; //set compared value to 3
-        
-                    // gene comes from parent 2 (index 1)
-                    index = 1;
-                    
-                }else if
-                
-                */
-                
-                if(geneValue[0] != null) { //both parents have equal fitness and gene value at first index from parent 1 exists
+                if(geneValue[0] != null) { //gene value at first index from parent 1 exists
                     
                     // if gene is active (3) else if gene is not active (4)
                     compareValue = geneValue[0].getGeneState() ? 3 : 4; //set compared value to 3
@@ -473,20 +418,72 @@ public class Network {
             
             // if a gene was selected
             if(index != -2){
+            	float[] fitnesses = new float[]{(float) parent1.getNetFitness(), (float) parent2.getNetFitness()};
                 // having the two parents' genes mutate the new inherited gene depending on the compareValue
-                gene = crossoverGeneMutate(geneValue, index, compareValue);
+                gene = crossoverGeneMutate(fitnesses, geneValue, index, compareValue);
                 //add gene to the child gene list
                 childGeneList.add(gene);
             }
             
         }
     
-        child = new Network(numberOfInputs, numberOfOutputs, childNodeList, childGeneList); //create new child neural network
+        child = new Network(newID, numberOfInputs, numberOfOutputs, childNodeList, childGeneList); //create new child neural network
+        
         return child; //return newly created neural network
     }
 
-    private float[] getAllNodeValues() {
-        float[] values = new float[nodeList.size()]; //create an array with the size of number of nodes
+    // feed input and propagate
+    public double[] fireNet(double[] inputs){
+
+    	// reset all node values (no need for input nodes)
+    	for(int i = getNumberOfInputNodes(); i < getNodeCount(); i++){
+    		getNodeByID(i).setNodeValue(0);
+    	}
+    	
+    	// set input
+    	for(int i = 0; i < getNumberOfInputNodes(); i++){
+    		getNodeByID(i).setNodeValue(inputs[i]);
+    	}
+    	// set bias to 1 (just to be sure)
+    	getNodeByID(getNumberOfInputNodes()).setNodeValue(1);
+    	
+    	// for each layer 'i'
+    	for(int i = 0; i < this.getNumLayers(); i++){
+    		
+    		// for each node 'j' in layer 'i'
+    		for(int j = 0; j < this.getNumNodesInLayer(i); j++){
+        		int inID = nodesInLayer.get(i).get(j);
+        		Node inNode = getNodeByID(inID);
+        		
+        		// activate node before spreading (if not input or bias node)
+        		if((inNode.getNodeType() != Node.INPUT_BIAS_NODE) && (inNode.getNodeType() != Node.INPUT_NODE)){
+        			inNode.activation();
+        		}
+        		
+        		List<Gene> forwardGenes = inNode.getForwardGenes();
+
+        		// for each link between node 'inID' and every other node 'outID' in ForwardGenes
+        		for(Gene g : forwardGenes){
+        			
+        			// if gene is not activated then skip
+        			if(g.getGeneState()){
+        				
+        		        if(getNodeByID(g.getInID()).getLayer() == getNodeByID(g.getOutID()).getLayer())System.out.println("Nodes linking in the same Layer: " + g.getInID() + " | " + g.getOutID());
+
+	        			double signal = inNode.getNodeValue() * g.getWeight();
+	        			getNodeByID(g.getOutID()).addSignal(signal);
+        			}
+        		}
+        		
+        	}
+    	}
+    	
+    	return getOutputValues();
+    }
+    
+    
+    private double[] getAllNodeValues() {
+        double[] values = new double[nodeList.size()]; //create an array with the size of number of nodes
  
         for (int i = 0; i < values.length; i++){ //run through number of nodes
             values[i] = getNodeByID(i).getNodeValue(); //set node values
@@ -494,8 +491,8 @@ public class Network {
         return values; //return all nodes value array
     }
     
-    private float[] getInputValues(){
-        float[] values = new float[numberOfInputs]; //create an array with size of number of input nodes
+    private double[] getInputValues(){
+        double[] values = new double[numberOfInputs]; //create an array with size of number of input nodes
  
         for (int i = 0; i < numberOfInputs; i++){ //run through number of inputs
             values[i] = getNodeByID(i).getNodeValue(); //set input nodes value
@@ -504,9 +501,9 @@ public class Network {
         return values; //return input nodes value array
     }
     
-    private float[] getHiddenValues(){
+    private double[] getHiddenValues(){
         int numberOfHiddens = nodeList.size() - (numberOfInputs + numberOfOutputs); //get number of hidden nodes that exist
-        float[] values = new float[numberOfHiddens];  //create an array with size of number of hidden nodes
+        double[] values = new double[numberOfHiddens];  //create an array with size of number of hidden nodes
  
         for (int i = 0; i < numberOfHiddens; i++){  //run through number of hiddens
             values[i] = getNodeByID(i + numberOfInputs + numberOfOutputs).getNodeValue();  //set hidden nodes value
@@ -514,7 +511,46 @@ public class Network {
  
         return values; //return hidden nodes value array
     }
-
+    
+    private void setNodesInLayer(){
+    	// sets an array for each Layer with the Nodes (ID's) it contains
+    	
+    	nodesInLayer = new ArrayList<List<Integer>>();
+    	
+    	// initialize each layer
+    	for(int i = 0; i < this.getNumLayers(); i++){
+    		nodesInLayer.add(new ArrayList<Integer>());
+    	}
+    	for(int i = 0; i < this.getNodeCount(); i++){    		
+    		nodesInLayer.get(this.getNodeByID(i).getLayer()).add(i);
+    	}
+    	/* See Nodes per Layer
+    	System.out.println("Nodes per layer:");
+    	for(int i = 0; i < this.getNumLayers(); i++){
+    		for(int j = 0; j < nodesInLayer.get(i).size(); j++){
+    			System.out.print(nodesInLayer.get(i).get(j)+" ");
+    		}
+    		System.out.println();
+    	}
+    	*/
+    }
+    
+    private void setNodesForwardGenes(){
+    	// Sets the ForwardGenes (outID of genes that link a node to another that is at a higher layer) 
+    	// for each Node in the Network
+    	
+    	// resets to null
+    	for(int i = 0; i < getNodeCount(); i++){
+    		getNodeByID(i).clearForwardGenes();
+    	}
+    	// updates
+    	for(Gene g: geneList){
+    		getNodeByID(g.getInID()).addForwardGene(g);
+    	}
+    	
+    	
+    }
+    
     private int getInnovationNumber(int in, int out){
         Gene gene;
         
@@ -526,7 +562,7 @@ public class Network {
             }
         }
         
-        geneHistory.add(new Gene(innovationNumber, in , out, 0f, true));
+        geneHistory.add(new Gene(innovationNumber, 0, in , out, 0f, true));
         return innovationNumber++;
     }
 
@@ -535,10 +571,10 @@ public class Network {
     
         Node node = null;
     
-        for (int i = 0; i < numberOfInputs; i++) { //run through number of input perceptrons
+        for (int i = 0; i < numberOfInputs + 1; i++) { //run through number of input nodes (+ Bias node)
     
         	//if this is the last input
-            if(i == (numberOfInputs - 1)){
+            if(i == numberOfInputs){
                 node = new Node(i,Node.INPUT_BIAS_NODE); //make it a input bias type node  with index i as node ID
             }else{ //if this is not the last input
                 node = new Node(i, Node.INPUT_NODE); //make it a input type node with index i as node ID
@@ -548,7 +584,7 @@ public class Network {
             nodeList.add(node); //add node to the node list
         }
     
-        for (int i = numberOfInputs; i < numberOfInputs + numberOfOutputs; i++){  //run through number of output perceptrons
+        for (int i = numberOfInputs + 1; i < numberOfInputs + numberOfOutputs + 1; i++){  //run through number of output perceptrons
             node = new Node(i, Node.OUTPUT_NODE); //make it an output type node  with index i as node ID
             node.setLayer(1);
             
@@ -558,18 +594,19 @@ public class Network {
 
     private void initilizeGenes() {
         geneList = new ArrayList<Gene>(); //create an empty gene list
-    
-        for (int i = 0; i < numberOfInputs; i++){ //run through number of inputs
-            for (int j = numberOfInputs; j < numberOfInputs + numberOfOutputs; j++){ //run through number of outputs
+        Random rand = new Random();
+        
+        for (int i = 0; i < numberOfInputs + 1; i++){ //run through number of inputs (+ bias)
+            for (int j = numberOfInputs + 1; j < numberOfInputs + numberOfOutputs + 1; j++){ //run through number of outputs
                 
                 // System.out.println(getNetID()+" -> "+"from node "+i+" to "+j+": ");
-                Gene gene = new Gene(getInnovationNumber(i,j), i, j, (new Random().nextFloat()*2)-1, true); // create gene with default weight of 1.0 and and is active
+                Gene gene = new Gene(getInnovationNumber(i,j), getGeneCount(), i, j, ((rand.nextFloat()*2) - 1) * Population.mutationWeightPower, true); // create gene with default weight in [-1, 1]*Population.mutationWeightPower and active
                 insertNewGene(gene); //insert gene to correct location in gene list
             }
         }
     }
 
-    private void mutateAddConnection(){
+    private void mutateAddGene(){
         //random node ID's
         int randomNodeID1 = 0, randomNodeID2 = 0;
         int randNodeIndex1, randNodeIndex2;
@@ -588,8 +625,10 @@ public class Network {
         }
         
         while(!pick1.isEmpty()) {
-            randNodeIndex1 = new Random().nextInt(pick1.size());    // pick any random node ID from 0 to nodeList.size - 1
+        	// pick any random node ID from 0 to nodeList.size - 1
+            randNodeIndex1 = new Random().nextInt(pick1.size());    
             randomNodeID1 = pick1.get(randNodeIndex1);
+            Node node1 = getNodeByID(randomNodeID1);
             pick1.remove(randNodeIndex1);
             
             pick2 = new ArrayList<Integer>();
@@ -597,9 +636,9 @@ public class Network {
             // for each other node (not the randomNodeID1)
             for (int i = 0; i < nodeList.size(); i++) {
                 if(i == randomNodeID1)continue;
-                
-                // if ID i is an input then skip
-                if(getNodeByID(i).getNodeType() != Node.INPUT_NODE && getNodeByID(i).getNodeType() != Node.INPUT_BIAS_NODE){                
+                Node node2 = getNodeByID(i);
+                // if ID i is an input or comes before (in layer) then skip
+                if(node2.getNodeType() != Node.INPUT_NODE && node2.getNodeType() != Node.INPUT_BIAS_NODE && node2.getLayer() > node1.getLayer()){                
                     if(!connectionExists(randomNodeID1, i)){
                         // System.out.println(randomNodeID1+" can connect with "+i);
                         pick2.add(i);
@@ -625,9 +664,9 @@ public class Network {
         int node1Layer = getNodeByID(randomNodeID1).getLayer();
         int node2Layer = getNodeByID(randomNodeID2).getLayer();
         
-        int feedbackProbability = 10;   // 10% chance of feedback
+        int feedbackProbability = 0;   // 0% chance of feedback
         int rand = new Random().nextInt(101);
-        if(rand <= feedbackProbability){
+        if(rand >= feedbackProbability){
             // dont feedback
             if(node1Layer > node2Layer){
                 int store = randomNodeID1;
@@ -644,10 +683,10 @@ public class Network {
         }
         
         // if second node is input then reverse
+        /*
         int store = randomNodeID1;
         randomNodeID1 = randomNodeID2;
-        randomNodeID2 = store;
-        
+        randomNodeID2 = store;       
         /*
 
         if(rand <= feedbackProbability)
@@ -661,10 +700,10 @@ public class Network {
             
         */
         
-        Gene gene = new Gene(getInnovationNumber(randomNodeID1,randomNodeID2), randomNodeID1, randomNodeID2, 1f, true); //create gene which is enabled and 1 as default weight
+        Gene gene = new Gene(getInnovationNumber(randomNodeID1,randomNodeID2), getGeneCount(), randomNodeID1, randomNodeID2, 1f, true); //create gene which is enabled and 1 as default weight
 
         insertNewGene(gene); //add gene to the gene list
-        
+        getNodeByID(randomNodeID1).addForwardGene(gene);
         
     }
     
@@ -672,165 +711,111 @@ public class Network {
     private void mutateAddNode(){
         int inID, newID, outID; //inID is old connections in node, outID is old connections out node, newID is the new node, and new innovation number for the connections
       
-        float oldWeight; //weight from the old gene
+        double oldWeight; //weight from the old gene
   
         Gene oldGene = null; //find a random old gene
         
-        if(hasActiveGene()){
-            visited = new boolean[getNodeCount() + 1];
-            
-            while (true) { //run till found
-                int randomGeneIndex = new Random().nextInt(geneList.size()); //pick random gene
-                oldGene = geneList.get(randomGeneIndex); //get gene at random index
-                if (oldGene.getGeneState()) //if gene is active
-                    break;
-            }
-     
-            oldGene.setGeneState(false); //disable this gene
-            inID = oldGene.getInID(); //get in node ID
-            outID = oldGene.getOutID(); //get out node ID
-            oldWeight = oldGene.getWeight(); //get old weight
-            
-            Node newNode = new Node(getNodeCount(), Node.HIDDEN_NODE); //create new hidden node
-            newID = newNode.getNodeID(); //get new node's ID
-            
-            // set layer value
-            // update numNodesPerLayer
-            
-            /*
-            if(getNodeByID(inID).getNodeType() == Node.OUTPUT_NODE){
-                if(getNodeByID(inID).getLayer() == 1){
-                    newNode.setLayer(1);    // set Layer of the new Node
-                    nodeNumPerLayer[1]++;
-                    setNumLayers(2);
-                }else{
-                    newNode.setLayer(getNodeByID(inID).getLayer() - 1);    // set Layer of the new Node
-                    nodeNumPerLayer[newNode.getLayer() - 1]++;
-                }
+        ArrayList<Integer> activeGenes = getActiveGenes();
+        if(activeGenes.size() == 0){return;}
+        
+        int randomGeneIndex = new Random().nextInt(activeGenes.size()); //pick random gene
+        oldGene = geneList.get(activeGenes.get(randomGeneIndex)); //get gene at random index
+
+        oldGene.setGeneState(false); //disable this gene
+        inID = oldGene.getInID(); //get in node ID
+        outID = oldGene.getOutID(); //get out node ID
+        oldWeight = oldGene.getWeight(); //get old weight
+        
+        Node newNode = new Node(getNodeCount(), Node.HIDDEN_NODE); //create new hidden node
+        newID = newNode.getNodeID(); //get new node's ID
+        
+        System.out.println("	Old in node layer: " + getNodeByID(inID).getLayer() + " id: " + getNetID());
+        newNode.setLayer(getNodeByID(inID).getLayer() + 1);    // set Layer of the new Node
+        nodeNumPerLayer[newNode.getLayer()]++;
                 
-            }else{
-            
-            */
-            newNode.setLayer(getNodeByID(inID).getLayer() + 1);    // set Layer of the new Node
-            nodeNumPerLayer[newNode.getLayer()]++;
-            // }
-            
-            nodeList.add(newNode); //add new node to the node list
-            
-            Gene newGene1 = new Gene(getInnovationNumber(inID, newID), inID, newID, 1f, true); //create new gene
-            Gene newGene2 = new Gene(getInnovationNumber(newID, outID), newID, outID, oldWeight, true);  //create new gene
-    
-            //add genes to gene list
-            insertNewGene(newGene1);
-            insertNewGene(newGene2);
+        nodeList.add(newNode); //add new node to the node list
+        
+        // add genes to gene list
+        Gene newGene1 = new Gene(getInnovationNumber(inID, newID), getGeneCount(), inID, newID, 1f, true); //create new gene
+        insertNewGene(newGene1);
+        Gene newGene2 = new Gene(getInnovationNumber(newID, outID), getGeneCount(), newID, outID, oldWeight, true);  //create new gene
+        insertNewGene(newGene2);
+        
+        getNodeByID(inID).addForwardGene(newGene1);
+        getNodeByID(newID).addForwardGene(newGene2);
 
-            // update layer values:
-            
-            /*
-            System.out.println("Add Node Mutation:");
-            System.out.println("Input ID: "+inID);
-            System.out.println("Output ID: "+outID);
-            System.out.println();
-            */
-            
-            visited[inID] = true;
-            visited[newID] = true;
-
-            // propagate to forward nodes and update their layer values
-            forwardPropagationLayerUpdate(outID, newNode.getLayer() + 1);
-            
-            System.out.println(" ????? "+getNumLayers());
-
-            // set all output Nodes to maximum layer value:
-            for(int i = numberOfInputs; i < numberOfInputs + numberOfOutputs; i++){ // iterate over all ouputs
-                if(getNodeByID(i).getNodeType() == Node.OUTPUT_NODE){
-                    nodeNumPerLayer[getNodeByID(i).getLayer()]--;
-                    getNodeByID(i).setLayer(getNumLayers() - 1);
-                    nodeNumPerLayer[getNodeByID(i).getLayer()]++;
+     // search for every Gene that has an Input (or bias) as In Node
+        // and let it propagate to update layers
+        for(int i = 0; i < numberOfInputs + 1; i++){
+            Node node = nodeList.get(i);
+            int nodeType = node.getNodeType();
+            if(nodeType == Node.INPUT_NODE || nodeType == Node.INPUT_BIAS_NODE){
+                for(Gene g : node.getForwardGenes()){
+                    forwardPropagationLayerUpdate(g.getOutID(), 1);
                 }
             }
-            
-            // due to the way the forward propagation is design there might occur lapses in layer, so we correct that here:
-            // first and second delimite the zero sequence
-            int first = -1;
-            int second = -1;
-            for (int i = 0; i < getNumLayers(); i++){
-                if(nodeNumPerLayer[i] == 0){
-                    if(first == -1){
-                        // at first occurence set the bondaries to this index
-                        first = i;
-                        second = i;
-                    }else{
-                        // as we get more occurences of zeros drag the second bondary index
-                        second = i;
-                    }
-                }
-            }
-            // if sequence of zeros occur:
-            if(first != -1){
-                for (int i = second + 1; i < getNumLayers(); i++) {
-                    nodeNumPerLayer[first++] = nodeNumPerLayer[i];
-                    nodeNumPerLayer[i] = 0;
-                }
-                setNumLayers(first);
-            }
-            
-            
         }
+        // propagate to forward nodes and update their layer values
+        // forwardPropagationLayerUpdate(outID, newNode.getLayer() + 1);
+        
+        // set all output Nodes to maximum layer value:
+        // updateOutputNodesLayers();
+        
+        /*
+        // due to the way the forward propagation is design there might occur lapses in layer, so we correct that here:
+        // first and second delimit the zero sequence
+        int first = -1;
+        int second = -1;
+        for (int i = 0; i < getNumLayers(); i++){
+            if(nodeNumPerLayer[i] == 0){
+                if(first == -1){
+                    // at first occurrence set the boundaries to this index
+                    first = i;
+                    second = i;
+                }else{
+                    // as we get more occurrences of zeros drag the second boundary index
+                    second = i;
+                }
+            }
+        }
+        // if sequence of zeros occur:
+        if(first != -1){
+        	for (int i = second + 1; i < getNumLayers(); i++) {
+        		nodeNumPerLayer[first++] = nodeNumPerLayer[i];
+        		nodeNumPerLayer[i] = 0;
+        	}
+        	setNumLayers(first);
+        }
+        
+        */
+        
+        // set all output Nodes to maximum layer value:
+        updateOutputNodesLayers();
+        
+        setNodesInLayer();
     }
     
-    private void mutateWeight() {	
-    	// 90% chance of changing weight by a 50% to 150% factor
-    	// 10% of randomly changing the weight
-    	
-        int numberOfGenes = geneList.size(); //number of genes
- 
-        for (int i = 0; i < numberOfGenes; i++){ //run through all genes
-            Gene gene = geneList.get(i); // get gene at index i
-            float weight = 0;
-            int randomNumber;    //random number between 0 and 100
-            
-            /*
-            randomNumber = new Random().nextInt(100) + 1;
-            if (randomNumber <= 1) { // 1% chance
-                //flip sign of weight
-                weight = -gene.getWeight();
-                gene.setWeight(weight);
-            }
-            */
-            
-            randomNumber = new Random().nextInt(100) + 1;
-            
-            if (randomNumber <= 10) { // 10 % chance
-                //System.out.println("Net "+getNetID()+" mutated weight in gene "+getGeneByID(i).getInnovation()+" randomly.");
-                //pick random weight between -1 and 1
-                weight = (new Random().nextFloat()*2) - 1;
-                gene.setWeight(weight);
-            }
-            
-            if (randomNumber > 10) { // 90% chance
-                
-                //randomly change weight from 50% to 150%
-                
-                // try change using gaussian function
-                // float number = (float)Math.tanh(new Random().nextGaussian()) + 1f;
-                
-                float factor = new Random().nextFloat()*(3f/2f)+0.5f;   // random factor between 1/2 and 2 (half <-> double)
-                weight = gene.getWeight() * factor;
-                //System.out.println("Net "+getNetID()+" mutated weight in gene "+getGeneByID(i).getInnovation()+" uniformly ("+factor+").");
-                gene.setWeight(weight);
-            }
-            
-            /*
-            randomNumber = new Random().nextInt(100) + 1;
-            if (randomNumber <= 5) { // 5% chance
-                //flip activation state for gene
-                gene.setGeneState(!gene.getGeneState());
-            }
-            */
-            
+    private void mutateWeight(){
+
+    	for (int i = 0; i < geneList.size(); i++){ //run through all genes
+    		Gene gene = geneList.get(i); // get gene at index i
+
+    		if(gene.getGeneState()){	// only mutate active genes
+    			float linearMutationProb = new Random().nextFloat();
+    			if (linearMutationProb <= Population.uniformWeightMutationProb) {	// make uniform mutation
+    				// using gaussian function
+    				double change = new Random().nextGaussian() * 0.1 * Population.mutationWeightPower;
+    				double weight = gene.getWeight() + change;
+    				gene.setWeight(weight);
+
+    			}else{ // make random weight mutation
+    				//pick random weight between -Population.mutationWeightPower and Population.mutationWeightPower
+    				double weight = ((new Random().nextFloat() * 2) - 1) * Population.mutationWeightPower;
+    				gene.setWeight(weight);
+    			}
+
+    		}
         }
- 
     }
     
     private boolean hasActiveGene(){
@@ -839,6 +824,29 @@ public class Network {
             ok |= geneList.get(i).getGeneState(); //  same as: ok = ok || geneList...
         }
         return ok;
+    }
+    
+    // return a list with Active Gene's IDs (0-indexed)
+    private ArrayList<Integer> getActiveGenes(){
+        ArrayList<Integer> ans = new ArrayList<Integer>();
+        for (int i = 0; i < geneList.size(); i++) {
+        	Gene g = geneList.get(i);
+            if(g.getGeneState()){
+            	ans.add(g.getID());
+            }
+        }
+        return ans;
+    }
+    
+    private void updateOutputNodesLayers(){
+    	int numLayers = getNumLayers();
+        for(int i = numberOfInputs + 1; i < numberOfInputs + numberOfOutputs + 1; i++){ // iterate over all outputs
+            if(getNodeByID(i).getNodeType() == Node.OUTPUT_NODE){
+                nodeNumPerLayer[getNodeByID(i).getLayer()]--;
+                getNodeByID(i).setLayer(numLayers - 1);
+                nodeNumPerLayer[numLayers - 1]++;
+            }
+        }
     }
     
     private boolean connectionExists(int inID, int outID) {
@@ -857,17 +865,16 @@ public class Network {
     
     private void forwardPropagationLayerUpdate(int id , int layer){
 
+    	if(layer >= MAX_NUMBER_OF_LAYERS)return;
+    	
+    	Node node = getNodeByID(id);
+    	
         if(getNumLayers() < layer + 1) setNumLayers(layer + 1);
         
         // if node is input return
-        if(getNodeByID(id).getNodeType() == Node.INPUT_NODE || 
-        getNodeByID(id).getNodeType() == Node.INPUT_BIAS_NODE){
+        if(node.getNodeType() == Node.INPUT_NODE || node.getNodeType() == Node.INPUT_BIAS_NODE){
             return;
         }
-        
-        if(visited[id]){return;}
-        
-        visited[id] = true;
 
         // update number of nodes per layer:
         /*
@@ -878,30 +885,27 @@ public class Network {
         */
         
         // update node layer
-        if(getNodeByID(id).getLayer() < layer){
-            nodeNumPerLayer[getNodeByID(id).getLayer()]--;
+        if(node.getLayer() < layer){
+            nodeNumPerLayer[node.getLayer()]--;
             nodeNumPerLayer[layer]++;
             
-            getNodeByID(id).setLayer(layer);
+            node.setLayer(layer);
             // System.out.println(" Node "+id+" updated its layer to "+layer);
         }
         
         // if the current node is an output then no need for further propagation
-        if(getNodeByID(id).getNodeType() == Node.OUTPUT_NODE){
+        if(node.getNodeType() == Node.OUTPUT_NODE){
+        	setNumLayers(Math.max(layer, getNumLayers()));
             // System.out.println(" In output. Going to return.");
             return;
         }
         
-        // not the most efficient way to do this but it saves memory. also each NN has very few genes (from ~10 to ~100)
-        // if there is low performance try this: for every Node object keep a List of all the other Nodes it connects to and just iterate that List
-        for (int i = 0; i < getGeneCount(); i++) { 
-            if(getGeneByID(i).getInID() != id)continue;
-            
-            forwardPropagationLayerUpdate(getGeneByID(i).getOutID(), layer + 1);
-            
-            // System.out.println(geneList.get(i).getOutID());
+        // WARNING: this assumes that the NN is not recurrent
+        for(Gene gene: node.getForwardGenes()){
+        	// -> System.out.println(gene.getInID() + "(" + getNodeByID(gene.getInID()).getLayer() + ") | " + gene.getOutID() + "(" + getNodeByID(gene.getOutID()).getLayer() + ")");
+            forwardPropagationLayerUpdate(gene.getOutID(), layer + 1);
         }
-        
+
     }
 
     private void insertNewGene(Gene gene) {
@@ -927,12 +931,15 @@ public class Network {
         geneList.add(low,gene);   
     }
     
-    private static Gene crossoverGeneMutate(Gene[] copyGene, int index, int compareValue) {
-        Gene gene;
-        int randomNumber;
+    private static Gene crossoverGeneMutate(float[] fitnesses, Gene[] copyGene, int index, int compareValue) {
         
-        if(index == -1){
-            randomNumber = new Random().nextInt(100) + 1;
+    	Gene gene;
+        
+        Random rand = new Random(System.currentTimeMillis());
+        float randomNumber;
+        
+        if(index == -1){	// both parents have the gene
+            randomNumber = rand.nextFloat();
             
             // 40% chance that the weight of the new node is the average of the parents' nodes
             // 60% chance that the node is randomly picked from either parent
@@ -941,69 +948,55 @@ public class Network {
                 gene.setWeight((copyGene[0].getWeight() + copyGene[1].getWeight())/2f);
             }else{
                 // randomly select one gene from either parent
-                randomNumber = new Random().nextInt(2);
-                gene = new Gene(copyGene[randomNumber]);
+                gene = new Gene(copyGene[rand.nextInt(2)]);
             }
         }else{
             gene = new Gene(copyGene[index]);
         }
         
-        System.out.println("Gene "+gene.getInnovation()+":");
+        //System.out.println("Gene "+gene.getInnovation()+":");
         
         // compareValue may change the activation state of the gene
         switch (compareValue) {
         
         // gene exists in both parents && is active in both parents
         case 0:
-            System.out.println("Gene exists in both parents && is active in both parents");
-            randomNumber = new Random().nextInt(100) + 1;
-            if (randomNumber <= 5) {
-                System.out.println("  Set to false");
+            if (rand.nextFloat() < Population.crossoverToggleInheritedGeneStateProb){
+            	// inactivate gene
                 gene.setGeneState(false);
             }
             break;
         
         // gene exists in both parents && is inactive in both parents
         case 1:
-            System.out.println("Gene exists in both parents && is inactive in both parents");
-            randomNumber = new Random().nextInt(100) + 1;
-            if (randomNumber <= 5) {
-                System.out.println("  Set to true");
+            if (rand.nextFloat() < Population.crossoverToggleInheritedGeneStateProb) {
+            	// reactivate gene
                 gene.setGeneState(true);
             }
             break;
            
         // gene exists in both parents && is active only in one
         case 2:
-            System.out.println("Gene exists in both parents && is active only in one");
-            randomNumber = new Random().nextInt(100) + 1;
-            // 75% change of setting the gene state to false
-            if (randomNumber <= 75) {
-                System.out.println("  Set to false");
-                gene.setGeneState(false);
-            }else{
-                System.out.println("  Set to true");
-                gene.setGeneState(true);
-            }
-            
+        	// set to State from network with higher fitness
+        	boolean on = true;	// if both have the same fitness leave at True
+        	if(fitnesses[0] > fitnesses[1]){
+        		on = copyGene[0].getGeneState();
+        	}else if(fitnesses[0] < fitnesses[1]){
+        		on = copyGene[1].getGeneState();
+        	}
+        	gene.setGeneState(on);
             break;
         
         // gene only exists in one parent && is active
         case 3:
-            System.out.println("Gene only exists in one parent && is active");
-            randomNumber = new Random().nextInt(100) + 1;
-            if (randomNumber <= 5) {
-                System.out.println("  Set to false");
+            if (rand.nextFloat() < Population.crossoverToggleInheritedGeneStateProb) {
                 gene.setGeneState(false);
             }
             break;
             
         // gene only exists in one parent && is inactive
         case 4:
-            System.out.println("Gene only exists in one parent && is inactive");
-            randomNumber = new Random().nextInt(100) + 1;
-            if (randomNumber <= 5) {
-                System.out.println("  Set to true");
+            if (rand.nextFloat() < Population.crossoverToggleInheritedGeneStateProb) {
                 gene.setGeneState(true);
             }
             break;
@@ -1011,5 +1004,15 @@ public class Network {
  
         return gene; //return new gene
     }
-
+    
+    public void seeTest(){
+    	for(int i = 0; i < getNodeCount(); i++){
+    		System.out.print(i+": ");
+    		for(int j = 0; j < getNodeByID(i).getForwardGenes().size(); j++){
+    			System.out.print(getNodeByID(i).getForwardGenes().get(j)+"("+
+    		getNodeByID(i).getForwardGenes().get(j).getGeneState()+") ");
+    		}
+    		System.out.println();
+    	}
+    }
 }

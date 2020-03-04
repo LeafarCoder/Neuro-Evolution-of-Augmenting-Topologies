@@ -1,62 +1,173 @@
 package rafa.NEAT;
 
+import java.io.Serializable;
 import java.util.*;
 
-public class Species {
+public class Species implements Serializable{
+	// Species ID: 0,1,2,3,...
+
+	private static final long serialVersionUID = 1L;
 	
-	private int numOfSpecies = 0;
+	private Population parentPopulation;
 	
-	private List<Network> specieRepresentative = new ArrayList<Network>();
-	private List<Integer> specieSize = new ArrayList<Integer>();
+	// species is a collection of species.
+	// The first network of each species is the Network representative (used to compare)
+	private Hashtable<Integer, List<Network>> species = new Hashtable<Integer, List<Network>>();
+	private int lastSpeciesID = 0;
+	private static double speciationCompatibilityThreshold;	//threshold value that determines whether 2 neural networks belong to the same species
+	private static double speciationDisjointCoefficient; //coefficient effect of disjoint genes  
+	private static double speciationExcessCoefficient; //coefficient effect of  excess genes
+	private static double speciationWeightDifferenceCoefficient; //coefficient effect of average weight difference between equal genes
+	private static double speciationCompatibilityModifier; //modifies the deltaThreshold
+	private static double speciationSurvivalThreshold; // Percentage of survival for networks within a species (only the best nets survive)
 	
-	private static float deltaThreshold = 0.3f;	//threshold value that determines whether 2 neural networks belong to the same species
-	private static float disjointCoefficient = 1; //coefficient effect of disjoint genes  
-	private static float excessCoefficient = 1; //coefficient effect of  excess genes
-	private static float weightCoefficient = 0.4f; //coefficient effect of average weight difference between equal genes
+	private static int speciationSpeciesSize;	// sets the target for the number of species allowing to control the deltaThreshold
 	
+	public Species(Population parentPop){
+		
+		parentPopulation = parentPop;
+		
+		Species.speciationSpeciesSize = (int) Population.speciationSpeciesSize;
+		Species.speciationSurvivalThreshold = Population.speciationSurvivalThreshold;
+		Species.speciationDisjointCoefficient = Population.speciationDisjointCoefficient;
+		Species.speciationExcessCoefficient = Population.speciationExcessCoefficient;
+		Species.speciationWeightDifferenceCoefficient = Population.speciationWeightDifferenceCoefficient;
+		Species.speciationCompatibilityThreshold = Population.speciationCompatibilityThreshold;
+		Species.speciationCompatibilityModifier = Population.speciationCompatibilityModifier;
+	}
+	
+	public void killUnfitNetworks(){
+
+		// iterate over all Species to kill the unfitted networks
+		// (also erase them from the population)
+		Comparator<Network> comparator = new NetworkComparatorWorstFirst();
+		
+		Enumeration<Integer> speciesIDs = getSpeciesIDs();
+		while(speciesIDs.hasMoreElements()){
+			int specie_id = speciesIDs.nextElement();
+			System.out.println(" from species " + specie_id);
+			List<Network> specie_nets = Arrays.asList(getNetworksFromSpecie(specie_id));
+			Collections.sort(specie_nets, comparator);
+			
+			System.out.println(" >>> ABOUT TO DELETE <<< ");
+			for(int i = 0; i < specie_nets.size(); i++){
+				Network net = specie_nets.get(i);
+				System.out.println(net.getNetID() + " --> " + net.getNetFitness());
+			}
+			System.out.println(" >>> DONE PRESENTING FITNESSES <<< ");
+			 System.out.println(" --> kill " + (int)(specie_nets.size() * (1 - speciationSurvivalThreshold)));
+			// kill worst networks
+			int kill_num = (int)(specie_nets.size() * (1 - speciationSurvivalThreshold));
+			for(int i = 0; i < kill_num; i++){
+				Network net = specie_nets.get(i);
+				
+				// remove from species
+				removeFromSpecie(specie_id, net);
+				
+				// remove from population
+				parentPopulation.removeNetwork(net);
+
+			}
+		}
+	}
+	
+	public void adjustDeltaThreshold(){
+		if(species.size() < speciationSpeciesSize){
+			speciationCompatibilityThreshold -= speciationCompatibilityModifier;
+			System.out.println(" - threshold");
+		}else{
+			speciationCompatibilityThreshold += speciationCompatibilityModifier;
+			System.out.println(" + threshold");
+		}
+		
+		if(speciationCompatibilityThreshold < 0.3f){
+			speciationCompatibilityThreshold = 0.3f;
+		}
+		
+		System.out.println(speciationCompatibilityThreshold);
+	}
+	
+	// get available Species' IDs
+	public Enumeration<Integer> getSpeciesIDs(){
+		return species.keys();
+	}
 	
 	public int getNumOfSpecies(){
-		return numOfSpecies;
+		return species.size();
 	}
 	
 	public Network getSpecieRepresentative(int id){
-		return specieRepresentative.get(id);
+		// representative Network is always the first in each species.
+		return species.get(id).get(0);
+	}
+	
+	public Network[] getNetworksFromSpecie(int id){
+		int sp_size = getSpecieSize(id);
+		Network[] nets = new Network[sp_size];
+		
+		for(int i = 0; i < sp_size; i++){
+			nets[i] = species.get(id).get(i);
+		}
+		
+		return nets;
 	}
 	
 	public int getSpecieSize(int id){
-		return specieSize.get(id);
+		return species.get(id).size();
 	}
-	
-	public void incrementSpecieSize(int ID){
-		specieSize.set(ID, specieSize.get(ID) + 1);
-	}
-	
-	public void setDeltaThreshold(float deltaThreshold_) {
-        deltaThreshold = deltaThreshold_;
+
+	public void setDeltaThreshold(double deltaThreshold_) {
+		speciationCompatibilityThreshold = deltaThreshold_;
     }
 	
-	public void setSpeciationParameters(float coefDisjoint, float coefExcess, float coefWeights, float threshold){
-		disjointCoefficient = coefDisjoint;
-		disjointCoefficient = coefExcess;
-		weightCoefficient = coefWeights;
-		deltaThreshold = threshold;
+	public void addSpecie(Network representativeNet){
+		List<Network> new_specie = new ArrayList<Network>();
+		new_specie.add(representativeNet);
+		species.put(lastSpeciesID++,new_specie);
+		representativeNet.setSpecieID(lastSpeciesID - 1);
+
+		/*
+		System.out.println(
+			"src::NEAT::Species::addSpecie:\n\t"
+			+ "Adding the Network "+representativeNet.getNetID()+" to the new Specie "+(lastSpeciesID - 1)+".\n\t"
+			+ "Number of species: "+species.size()+"\n");
+		 */
+	}
+
+	public void addToSpecie(int id, Network net){
+		if(species.containsKey(id)){
+			species.get(id).add(net);
+			net.setSpecieID(id);
+		}else{
+			List<Network> new_specie = new ArrayList<Network>();
+			new_specie.add(net);
+			species.put(lastSpeciesID,new_specie);
+			net.setSpecieID(lastSpeciesID);
+			lastSpeciesID++;
+		}
 	}
 	
-	public void addSpecie(Network representativeNet){
-		specieRepresentative.add(representativeNet);
-		specieSize.add(1);
-		numOfSpecies++;
+	public void removeFromSpecie(int id, Network net){
+		species.get(id).remove(net);
 		
-		System.out.println("Adding a new specie ("+numOfSpecies+") with representative "+representativeNet.getNetID());
+		if(species.get(id).isEmpty())species.remove(id);
+	}
+	
+	public void resetSpeciesControlID(){
+		lastSpeciesID = 0;
 	}
 	
 	public void removeSpecie(int id){
-		specieRepresentative.remove(id);
-		specieSize.remove(id);
-		numOfSpecies--;
+		species.remove(id);
 	}
 	
 	public static boolean sameSpecies(Network net1, Network net2) {
+		float similarity = getSimilarity(net1, net2);
+        return similarity <= speciationCompatibilityThreshold; //return boolean compare value
+    }
+	
+	public static float getSimilarity(Network net1, Network net2){
+
         Hashtable<Integer, Gene[]> geneHash = new Hashtable<Integer, Gene[]>(); //hash table to be used to compared genes from the two networks
         
         Gene[] geneValue; //will be used to check whether a gene exists in both networks
@@ -76,7 +187,7 @@ public class Species {
         int equalGenes = 0; //number of genes both neural network have
 
         float similarity = 0; //similarity of the two networks
-        float averageWeightDifference = 0; //average weight difference of the two network's equal genes
+        double averageWeightDifference = 0; //average weight difference of the two network's equal genes
  
         boolean foundAllExcess = false; //if all excess genes are found
         boolean isFirstGeneExcess = false; //if net 1 contains the excess genes
@@ -141,16 +252,30 @@ public class Species {
             }
         }
  
-        averageWeightDifference /= (float)equalGenes; //get average weight difference of equal genes
+        averageWeightDifference /= (double)equalGenes; //get average weight difference of equal genes
  
         // https://www.cs.cmu.edu/afs/cs/project/jair/pub/volume21/stanley04a-html/node3.html
-        similarity = (averageWeightDifference * weightCoefficient) + //calculate weight difference disparity
-                     (((float)disjointGenes * disjointCoefficient) / (float)largerGenomeSize) +  //calculate disjoint disparity
-                     (((float)excessGenes * excessCoefficient) / (float)largerGenomeSize); //calculate excess disparity
+        similarity = (float) ((averageWeightDifference * speciationWeightDifferenceCoefficient) + //calculate weight difference disparity
+                     ((disjointGenes * speciationDisjointCoefficient) / (float)largerGenomeSize) +  //calculate disjoint disparity
+                     ((excessGenes * speciationExcessCoefficient) / (float)largerGenomeSize)); //calculate excess disparity
  
-        //if similairty is <= to threshold then return true, otherwise false
-        return similarity <= deltaThreshold; //return boolean compare value
+        return similarity;
+	}
+ 
+	private class NetworkComparatorWorstFirst implements Comparator<Network>{
+        // Overriding compare()method of Comparator 
+		public int compare(Network net1, Network net2) {
+			// System.out.println(net1 + " " + net2);
+			if(net1.getNetFitness() < net2.getNetFitness()){
+				return -1;
+			}else if(net1.getNetFitness() > net2.getNetFitness()){
+				return 1;
+			}else{
+				return 0;
+			}
+		}
     }
-    
+	
+	
 }
 

@@ -1,0 +1,69 @@
+{
+	"Parameters":[
+		"popInitialSize",
+
+		"mutateNodeAddProbability",
+		"mutateGeneAddProbability",
+		"mutateWeightProbability",
+		"mutationWeightPower",
+		"uniformWeightMutationProb"
+
+		"crossoverDisableInheritedGeneProb",
+
+		"speciationSpeciesSize",
+		"speciationSurvivalThreshold",
+		"speciationDisjointCoefficient",
+		"speciationExcessCoefficient",
+		"speciationWeightDifferenceCoefficient",
+		"speciationCompatibilityThreshold",
+		"speciationCompatibilityModifier"
+
+	],
+	
+	"Values":[
+		30,
+
+		0.03,
+		0.05,
+		0.8,
+		2,
+		0.9,
+
+		0.1,
+
+		5,
+		0.2,
+		2,
+		2,
+		1,
+		6,
+		0.3
+
+
+		
+	],
+	
+	"Description":[
+		"Initial number of networks in the population.",
+
+		"Probability of adding a Node during mutation",
+		"Probability of adding a Gene during mutation",
+		"Probability of changing a Gene's weight during mutation",
+		"Maximum deviation for single Weight mutation",
+		"Probability for uniformly mutating the Weight of a Gene. Otherwise mutate randomly",
+
+		"Probability of disabling an inherited Gene during crossover",
+
+		"Target number for different species in the population",
+		"Percentage of survival for networks within a species (only the best nets survive)",
+		"Coefficient used in Speciation to distinguish two networks",
+		"Coefficient used in Speciation to distinguish two networks",
+		"Coefficient used in Speciation to distinguish two networks",
+		"Threshold to tell two different networks apart",
+		"Changes the speciationCompatibilityThreshold in this amount per generation to meet the SpeciesSize"
+
+
+	
+	]
+
+}

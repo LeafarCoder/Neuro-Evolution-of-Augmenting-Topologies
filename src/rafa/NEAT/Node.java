@@ -1,18 +1,20 @@
 package rafa.NEAT;
 
+import java.io.Serializable;
 import java.util.*;
 
-public class Node{
+public class Node implements Serializable{
 	
 	public final static int INPUT_NODE = 0;
     public final static int INPUT_BIAS_NODE = 1;
     public final static int HIDDEN_NODE = 2;
     public final static int OUTPUT_NODE = 3;
 	
-    private int ID;
+    private int ID;	// 0-indexed
     private int layer;
     private int type;
-    private float value;
+    private double value;
+    private List<Gene> forwardGenes = new ArrayList<Gene>(); // saves genes that leave the node (forward)
     
     // create a copy of the node
     public Node(Node copy){
@@ -20,7 +22,7 @@ public class Node{
         type = copy.type;
  
         // if this is the bias node set it to 1, else reset value to 0
-        value = copy.type == INPUT_BIAS_NODE ? 1f : 0f;
+        value = (copy.type == INPUT_BIAS_NODE) ? 1f : 0f;
     }
 
 	public Node(int id_, int type_){
@@ -36,6 +38,10 @@ public class Node{
 		this.layer = layer;
 	}
 	
+	public void addSignal(double signal){
+		value += signal;
+	}
+	
 	public int getNodeID(){
 		return ID;
 	}
@@ -48,20 +54,32 @@ public class Node{
 		return type;
 	}
 	
-	public float getNodeValue(){
+	public double getNodeValue(){
 		return value;
+	}
+	
+	public List<Gene> getForwardGenes(){
+		return forwardGenes;
+	}
+	
+	public void addForwardGene(Gene new_gene){
+		forwardGenes.add(new_gene);
+	}
+
+	public void clearForwardGenes(){
+		forwardGenes.clear();
 	}
 	
 	public void setLayer(int layer){
 		this.layer = layer;
 	}
 	
-	public void setNodeValue(float v){
+	public void setNodeValue(double v){
 		if(type != INPUT_BIAS_NODE)value=v;
 	}
 	
 	public void activation(){
-		value = (float)Math.tanh(value);		
+		value = (double)Math.tanh(value);
 	}
 }
 

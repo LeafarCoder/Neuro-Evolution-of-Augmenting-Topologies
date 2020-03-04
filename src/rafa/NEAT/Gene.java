@@ -1,13 +1,16 @@
 package rafa.NEAT;
 
-public class Gene{
+import java.io.Serializable;
+
+public class Gene implements Serializable{
 	 
     public final int GENE_INFORMATION_SIZE = 4;
  
     private int innovation;
     private int inID;
     private int outID;
-    private float weight;
+    private int ID;
+    private double weight;
     private boolean on;
 
     public Gene(Gene copy){
@@ -17,10 +20,12 @@ public class Gene{
         outID = copy.outID;
         weight = copy.weight;
         on = copy.on;
+        ID = copy.ID;
     }
  
-    public Gene(int inovation_, int inID_, int outID_, float weight_, boolean on_){
+    public Gene(int inovation_, int ID_ ,int inID_, int outID_, double weight_, boolean on_){
         innovation = inovation_;
+        ID = ID_;
         inID = inID_;
         outID = outID_;
         weight = weight_;
@@ -34,12 +39,16 @@ public class Gene{
     public int getOutID() {
         return outID;
     }
+    
+    public int getID(){
+    	return ID;
+    }
 
     public int getInnovation(){
         return innovation;
     }
  
-    public float getWeight(){
+    public double getWeight(){
         return weight;
     }
 
@@ -51,12 +60,16 @@ public class Gene{
         on = on_;
     }
 
-    public void setWeight(float weight_) {
+    public void setWeight(double weight_) {
         weight = weight_;
     }
- 
+    
+    public void setID(int ID_){
+    	ID = ID_;
+    }
+    
     public String getGeneString() {
-        String gene = String.format("%2s", inID) + " -> " + String.format("%2s", outID) + " (weight: " + String.format("%4s",weight) + ", active: "+(on?'1':'0')+")";
+        String gene = String.format("%2s", innovation) + ": " + String.format("%2s", inID) + " -> " + String.format("%2s", outID) + " (weight: " + String.format("%4s",weight) + ", active: "+(on?'1':'0')+")";
  
         return gene;
     }
