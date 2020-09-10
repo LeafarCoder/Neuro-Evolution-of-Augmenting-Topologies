@@ -1,4 +1,4 @@
-# NeuroEvolution-of-Augmenting-Topologies
+# Neuro Evolution of Augmenting Topologies (NEAT)
 
 (Work on progress...)
 
