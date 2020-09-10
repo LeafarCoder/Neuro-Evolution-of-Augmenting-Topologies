@@ -19,4 +19,4 @@ Goals:
 
 Create a general purpose NEAT-based program able to learn task and then execute them.
 The first task the program will try to learn is to beat a real-life user in Tic Tac Toe.
-(last update: 24/04/2017)
+(last update: August 2018)
