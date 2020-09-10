@@ -30,3 +30,6 @@ Goals:
 - The first task the program will try to learn is to beat a real-life user in Tic Tac Toe.
 
 Last update: August 2018
+
+Author:
+* [Rafael Correia](https://sourcerer.io/leafarcoder)
