@@ -4,9 +4,13 @@
 
 ![](https://github.com/LeafarCoder/Neuro-Evolution-of-Augmenting-Topologies/blob/master/Images/early_version_program_design.png)
 
+---
+
+Wikipedia:
+
 > NeuroEvolution of Augmenting Topologies (NEAT) is a genetic algorithm for the generation of evolving artificial neural networks. It alters both the weighting parameters and structures of networks, attempting to find a balance between the fitness of evolved solutions and their diversity. It is based on applying three key techniques: tracking genes with history markers to allow crossover among topologies, applying speciation (the evolution of species) to preserve innovations, and developing topologies incrementally from simple initial structures ("complexifying").
 
-Source: Wikipedia
+---
 
 ![](https://github.com/LeafarCoder/Neuro-Evolution-of-Augmenting-Topologies/blob/master/Images/early_version_net_design.png)
 
