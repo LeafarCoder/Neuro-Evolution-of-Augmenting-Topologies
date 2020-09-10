@@ -31,5 +31,5 @@ Goals:
 
 Last update: August 2018
 
-Author:
+Author(s):
 * [Rafael Correia](https://sourcerer.io/leafarcoder)
