@@ -14,5 +14,7 @@
 	<classpathentry exported="true" kind="con" path="org.eclipse.jdt.USER_LIBRARY/XStream"/>
 	<classpathentry exported="true" kind="con" path="org.eclipse.jdt.USER_LIBRARY/Minim Audio"/>
 	<classpathentry exported="true" kind="con" path="org.eclipse.jdt.USER_LIBRARY/Processing 2.2.1"/>
+	<classpathentry kind="lib" path="/FlappyBird/core.jar"/>
+	<classpathentry kind="lib" path="C:/Users/joser/Documents/Programing/Java/User Libraries/json-simple-1.1.1.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
